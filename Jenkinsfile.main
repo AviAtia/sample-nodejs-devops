@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKERHUB_CREDS = credentials('dockerhub-credentials')
+        DOCKERHUB_USERNAME = "${DOCKERHUB_CREDS_USR}"
+        IMAGE_NAME        = "${DOCKERHUB_CREDS_USR}/sample-nodejs"
+        GIT_SHA           = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+        IMAGE_TAG         = "${env.BUILD_NUMBER}-${GIT_SHA}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh """
+                    docker build \
+                        -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                        -t ${IMAGE_NAME}:latest \
+                        .
+                """
+            }
+        }
+
+        stage('Trivy Scan') {
+            steps {
+                sh """
+                    trivy image \
+                        --exit-code 1 \
+                        --severity HIGH,CRITICAL \
+                        --no-progress \
+                        ${IMAGE_NAME}:${IMAGE_TAG}
+                """
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                sh """
+                    echo \${DOCKERHUB_CREDS_PSW} | docker login -u \${DOCKERHUB_CREDS_USR} --password-stdin
+                    docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                    docker push ${IMAGE_NAME}:latest
+                """
+            }
+        }
+    }
+
+    post {
+        always {
+            sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest || true"
+            sh "docker logout || true"
+            cleanWs()
+        }
+        failure {
+            echo 'Main pipeline failed — image was not pushed.'
+        }
+        success {
+            echo "Image pushed: ${IMAGE_NAME}:${IMAGE_TAG}"
+        }
+    }
+}
