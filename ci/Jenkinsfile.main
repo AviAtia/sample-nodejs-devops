@@ -3,21 +3,47 @@ pipeline {
 
     environment {
         DOCKERHUB_CREDS = credentials('dockerhub-credentials')
-        DOCKERHUB_USERNAME = "${DOCKERHUB_CREDS_USR}"
-        IMAGE_NAME        = "${DOCKERHUB_CREDS_USR}/sample-nodejs"
-        GIT_SHA           = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-        IMAGE_TAG         = "${env.BUILD_NUMBER}-${GIT_SHA}"
+        IMAGE_NAME      = "${DOCKERHUB_CREDS_USR}/sample-nodejs"
     }
 
     stages {
+        stage('Skip Version Bump Commits') {
+            steps {
+                script {
+                    def commitMsg = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+                    if (commitMsg.startsWith('[version bump]')) {
+                        currentBuild.result = 'NOT_BUILT'
+                        error('Skipping version bump commit to prevent infinite loop.')
+                    }
+                }
+            }
+        }
+
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
+        stage('Version Bump') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                    sh '''
+                        git config user.email "ci@devopschallenge.com"
+                        git config user.name "Jenkins"
+                        npm version patch -m "[version bump] %s"
+                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/AviAtia/sample-nodejs-devops.git HEAD:main --follow-tags
+                    '''
+                }
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
+                script {
+                    env.APP_VERSION = sh(script: "node -p \"require('./package.json').version\"", returnStdout: true).trim()
+                    env.IMAGE_TAG   = env.APP_VERSION
+                }
                 sh """
                     docker build \
                         -t ${IMAGE_NAME}:${IMAGE_TAG} \
