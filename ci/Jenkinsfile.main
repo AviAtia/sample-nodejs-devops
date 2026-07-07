@@ -78,7 +78,11 @@ pipeline {
 
     post {
         always {
-            sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest || true"
+            script {
+                if (env.IMAGE_NAME && env.IMAGE_TAG) {
+                    sh "docker rmi ${env.IMAGE_NAME}:${env.IMAGE_TAG} ${env.IMAGE_NAME}:latest || true"
+                }
+            }
             sh "docker logout || true"
             cleanWs()
         }
