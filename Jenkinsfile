@@ -52,10 +52,14 @@ pipeline {
             cleanWs()
         }
         failure {
-            echo 'PR pipeline failed — merge is blocked.'
+            githubNotify context: 'Jenkins CI/PR',
+                         description: 'PR checks failed — merge is blocked.',
+                         status: 'FAILURE'
         }
         success {
-            echo 'All checks passed — PR is ready to merge.'
+            githubNotify context: 'Jenkins CI/PR',
+                         description: 'All checks passed — PR is ready to merge.',
+                         status: 'SUCCESS'
         }
     }
 }
