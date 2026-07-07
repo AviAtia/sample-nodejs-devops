@@ -31,7 +31,19 @@ pipeline {
                     sh '''
                         git config user.email "ci@devopschallenge.com"
                         git config user.name "Jenkins"
-                        npm version patch -m "[version bump] %s"
+
+                        CURRENT=$(grep '"version"' package.json | head -1 | sed 's/.*"version": "\\(.*\\)".*/\\1/')
+                        MAJOR=$(echo $CURRENT | cut -d. -f1)
+                        MINOR=$(echo $CURRENT | cut -d. -f2)
+                        PATCH=$(echo $CURRENT | cut -d. -f3)
+                        NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+
+                        sed -i "s/\\"version\\": \\"${CURRENT}\\"/\\"version\\": \\"${NEW_VERSION}\\"/" package.json
+                        sed -i "0,/\\"version\\": \\"${CURRENT}\\"/s/\\"version\\": \\"${CURRENT}\\"/\\"version\\": \\"${NEW_VERSION}\\"/" package-lock.json
+
+                        git add package.json package-lock.json
+                        git commit -m "[version bump] v${NEW_VERSION}"
+                        git tag "v${NEW_VERSION}"
                         git push https://${GIT_USER}:${GIT_TOKEN}@github.com/AviAtia/sample-nodejs-devops.git HEAD:main --follow-tags
                     '''
                 }
@@ -41,7 +53,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    env.APP_VERSION = sh(script: "node -p \"require('./package.json').version\"", returnStdout: true).trim()
+                    env.APP_VERSION = sh(script: "grep '\"version\"' package.json | head -1 | sed 's/.*\"version\": \"\\(.*\\)\".*/\\1/'", returnStdout: true).trim()
                     env.IMAGE_TAG   = env.APP_VERSION
                 }
                 sh """
