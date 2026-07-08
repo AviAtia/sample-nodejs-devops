@@ -23,35 +23,28 @@ pipeline {
 
         stage('SAST - Semgrep') {
             steps {
-                sh """
-                    docker run --rm \
-                        -v \${WORKSPACE}:/src \
-                        semgrep/semgrep semgrep scan \
-                        --config=auto \
-                        --severity=ERROR \
-                        --error \
-                        /src
-                """
+                sh "python3 ci/scripts/sast.py --workspace \${WORKSPACE}"
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+                sh """
+                    python3 ci/scripts/build.py \
+                        --image-name ${IMAGE_NAME} \
+                        --image-tag ${IMAGE_TAG}
+                """
             }
         }
 
         stage('Trivy Scan') {
             steps {
                 script {
-                    def ignoreFlag = params.IGNORE_UNFIXED ? '--ignore-unfixed' : ''
+                    def ignoreFlag = params.IGNORE_UNFIXED ? '--ignore-unfixed' : '--no-ignore-unfixed'
                     sh """
-                        trivy image \
-                            --exit-code 1 \
-                            --severity HIGH,CRITICAL \
-                            --no-progress \
-                            ${ignoreFlag} \
-                            ${IMAGE_NAME}:${IMAGE_TAG}
+                        python3 ci/scripts/trivy_scan.py \
+                            --image ${IMAGE_NAME}:${IMAGE_TAG} \
+                            ${ignoreFlag}
                     """
                 }
             }
@@ -64,10 +57,14 @@ pipeline {
             cleanWs()
         }
         failure {
-            echo 'PR pipeline failed — merge is blocked.'
+            githubNotify context: 'Jenkins CI/PR',
+                         description: 'PR checks failed — merge is blocked.',
+                         status: 'FAILURE'
         }
         success {
-            echo 'All checks passed — PR is ready to merge.'
+            githubNotify context: 'Jenkins CI/PR',
+                         description: 'All checks passed — PR is ready to merge.',
+                         status: 'SUCCESS'
         }
     }
 }

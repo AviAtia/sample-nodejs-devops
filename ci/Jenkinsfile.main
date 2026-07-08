@@ -37,24 +37,12 @@ pipeline {
         stage('Version Bump') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
-                    sh '''
-                        git config user.email "ci@devopschallenge.com"
-                        git config user.name "Jenkins"
-
-                        CURRENT=$(grep '"version"' package.json | head -1 | sed 's/.*"version": "\\(.*\\)".*/\\1/')
-                        MAJOR=$(echo $CURRENT | cut -d. -f1)
-                        MINOR=$(echo $CURRENT | cut -d. -f2)
-                        PATCH=$(echo $CURRENT | cut -d. -f3)
-                        NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
-
-                        sed -i "s/\\"version\\": \\"${CURRENT}\\"/\\"version\\": \\"${NEW_VERSION}\\"/" package.json
-                        sed -i "0,/\\"version\\": \\"${CURRENT}\\"/s/\\"version\\": \\"${CURRENT}\\"/\\"version\\": \\"${NEW_VERSION}\\"/" package-lock.json
-
-                        git add package.json package-lock.json
-                        git commit -m "[version bump] v${NEW_VERSION}"
-                        git tag -a "v${NEW_VERSION}" -m "v${NEW_VERSION}"
-                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/AviAtia/sample-nodejs-devops.git HEAD:main --follow-tags
-                    '''
+                    sh """
+                        python3 ci/scripts/version_bump.py \
+                            --git-user \${GIT_USER} \
+                            --git-token \${GIT_TOKEN} \
+                            --repo AviAtia/sample-nodejs-devops
+                    """
                 }
             }
         }
@@ -66,10 +54,10 @@ pipeline {
                     env.IMAGE_TAG   = env.APP_VERSION
                 }
                 sh """
-                    docker build \
-                        -t ${IMAGE_NAME}:${IMAGE_TAG} \
-                        -t ${IMAGE_NAME}:latest \
-                        .
+                    python3 ci/scripts/build.py \
+                        --image-name ${IMAGE_NAME} \
+                        --image-tag ${IMAGE_TAG} \
+                        --extra-tags latest
                 """
             }
         }
@@ -77,14 +65,11 @@ pipeline {
         stage('Trivy Scan') {
             steps {
                 script {
-                    def ignoreFlag = params.IGNORE_UNFIXED ? '--ignore-unfixed' : ''
+                    def ignoreFlag = params.IGNORE_UNFIXED ? '--ignore-unfixed' : '--no-ignore-unfixed'
                     sh """
-                        trivy image \
-                            --exit-code 1 \
-                            --severity HIGH,CRITICAL \
-                            --no-progress \
-                            ${ignoreFlag} \
-                            ${IMAGE_NAME}:${IMAGE_TAG}
+                        python3 ci/scripts/trivy_scan.py \
+                            --image ${IMAGE_NAME}:${IMAGE_TAG} \
+                            ${ignoreFlag}
                     """
                 }
             }
@@ -93,9 +78,11 @@ pipeline {
         stage('Push to Docker Hub') {
             steps {
                 sh """
-                    echo \${DOCKERHUB_CREDS_PSW} | docker login -u \${DOCKERHUB_CREDS_USR} --password-stdin
-                    docker push ${IMAGE_NAME}:${IMAGE_TAG}
-                    docker push ${IMAGE_NAME}:latest
+                    python3 ci/scripts/push_image.py \
+                        --image-name ${IMAGE_NAME} \
+                        --image-tag ${IMAGE_TAG} \
+                        --username \${DOCKERHUB_CREDS_USR} \
+                        --password \${DOCKERHUB_CREDS_PSW}
                 """
             }
         }
