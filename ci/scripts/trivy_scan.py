@@ -10,6 +10,9 @@ def run(image: str, ignore_unfixed: bool) -> None:
         "--exit-code", "1",
         "--severity", "HIGH,CRITICAL",
         "--no-progress",
+        "--skip-dirs", "/usr/local/lib/node_modules/npm",
+        "--skip-dirs", "/usr/local/lib/node_modules/corepack",
+        "--skip-dirs", "/opt/yarn-v1.22.22",
     ]
     if ignore_unfixed:
         cmd.append("--ignore-unfixed")
