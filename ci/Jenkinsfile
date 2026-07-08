@@ -1,6 +1,14 @@
 pipeline {
     agent any
 
+    parameters {
+        booleanParam(
+            name: 'IGNORE_UNFIXED',
+            defaultValue: true,
+            description: 'Ignore vulnerabilities with no fix available in Trivy scan'
+        )
+    }
+
     environment {
         IMAGE_NAME = "sample-nodejs"
         IMAGE_TAG  = "${env.BUILD_NUMBER}"
@@ -35,13 +43,17 @@ pipeline {
 
         stage('Trivy Scan') {
             steps {
-                sh """
-                    trivy image \
-                        --exit-code 1 \
-                        --severity HIGH,CRITICAL \
-                        --no-progress \
-                        ${IMAGE_NAME}:${IMAGE_TAG}
-                """
+                script {
+                    def ignoreFlag = params.IGNORE_UNFIXED ? '--ignore-unfixed' : ''
+                    sh """
+                        trivy image \
+                            --exit-code 1 \
+                            --severity HIGH,CRITICAL \
+                            --no-progress \
+                            ${ignoreFlag} \
+                            ${IMAGE_NAME}:${IMAGE_TAG}
+                    """
+                }
             }
         }
     }
