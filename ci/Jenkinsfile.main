@@ -12,6 +12,7 @@ pipeline {
     environment {
         DOCKERHUB_CREDS = credentials('dockerhub-credentials')
         IMAGE_NAME      = "${DOCKERHUB_CREDS_USR}/sample-nodejs"
+        CI_SCRIPTS      = "devops-infra/ci-scripts"
     }
 
     stages {
@@ -31,6 +32,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
+                sh "git clone https://github.com/AviAtia/devops-infra.git devops-infra"
             }
         }
 
@@ -38,7 +40,7 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
                     sh """
-                        python3 ci/scripts/version_bump.py \
+                        python3 ${CI_SCRIPTS}/version_bump.py \
                             --git-user \${GIT_USER} \
                             --git-token \${GIT_TOKEN} \
                             --repo AviAtia/sample-nodejs-devops
@@ -54,7 +56,7 @@ pipeline {
                     env.IMAGE_TAG   = env.APP_VERSION
                 }
                 sh """
-                    python3 ci/scripts/build.py \
+                    python3 ${CI_SCRIPTS}/build.py \
                         --image-name ${IMAGE_NAME} \
                         --image-tag ${IMAGE_TAG} \
                         --extra-tags latest
@@ -67,7 +69,7 @@ pipeline {
                 script {
                     def ignoreFlag = params.IGNORE_UNFIXED ? '--ignore-unfixed' : '--no-ignore-unfixed'
                     sh """
-                        python3 ci/scripts/trivy_scan.py \
+                        python3 ${CI_SCRIPTS}/trivy_scan.py \
                             --image ${IMAGE_NAME}:${IMAGE_TAG} \
                             ${ignoreFlag}
                     """
@@ -78,7 +80,7 @@ pipeline {
         stage('Push to Docker Hub') {
             steps {
                 sh """
-                    python3 ci/scripts/push_image.py \
+                    python3 ${CI_SCRIPTS}/push_image.py \
                         --image-name ${IMAGE_NAME} \
                         --image-tag ${IMAGE_TAG} \
                         --username \${DOCKERHUB_CREDS_USR} \
@@ -91,7 +93,7 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
                     sh """
-                        python3 ci/scripts/update_helm.py \
+                        python3 ${CI_SCRIPTS}/update_helm.py \
                             --git-user \${GIT_USER} \
                             --git-token \${GIT_TOKEN} \
                             --repo AviAtia/devops-infra \

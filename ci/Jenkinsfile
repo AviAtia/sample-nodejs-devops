@@ -12,25 +12,27 @@ pipeline {
     environment {
         IMAGE_NAME = "sample-nodejs"
         IMAGE_TAG  = "${env.BUILD_NUMBER}"
+        CI_SCRIPTS = "devops-infra/ci-scripts"
     }
 
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
+                sh "git clone https://github.com/AviAtia/devops-infra.git devops-infra"
             }
         }
 
         stage('SAST - Semgrep') {
             steps {
-                sh "python3 ci/scripts/sast.py --workspace \${WORKSPACE}"
+                sh "python3 ${CI_SCRIPTS}/sast.py --workspace \${WORKSPACE}"
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 sh """
-                    python3 ci/scripts/build.py \
+                    python3 ${CI_SCRIPTS}/build.py \
                         --image-name ${IMAGE_NAME} \
                         --image-tag ${IMAGE_TAG}
                 """
@@ -42,7 +44,7 @@ pipeline {
                 script {
                     def ignoreFlag = params.IGNORE_UNFIXED ? '--ignore-unfixed' : '--no-ignore-unfixed'
                     sh """
-                        python3 ci/scripts/trivy_scan.py \
+                        python3 ${CI_SCRIPTS}/trivy_scan.py \
                             --image ${IMAGE_NAME}:${IMAGE_TAG} \
                             ${ignoreFlag}
                     """
@@ -52,19 +54,31 @@ pipeline {
     }
 
     post {
+        failure {
+            withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                sh '''
+                    curl -s -X POST \
+                      -H "Authorization: token ${GIT_TOKEN}" \
+                      -H "Content-Type: application/json" \
+                      -d '{"state":"failure","context":"Jenkins CI/PR","description":"PR checks failed — merge is blocked."}' \
+                      "https://api.github.com/repos/AviAtia/sample-nodejs-devops/statuses/${GIT_COMMIT}"
+                '''
+            }
+        }
+        success {
+            withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                sh '''
+                    curl -s -X POST \
+                      -H "Authorization: token ${GIT_TOKEN}" \
+                      -H "Content-Type: application/json" \
+                      -d '{"state":"success","context":"Jenkins CI/PR","description":"All checks passed — PR is ready to merge."}' \
+                      "https://api.github.com/repos/AviAtia/sample-nodejs-devops/statuses/${GIT_COMMIT}"
+                '''
+            }
+        }
         always {
             sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true"
             cleanWs()
-        }
-        failure {
-            githubNotify context: 'Jenkins CI/PR',
-                         description: 'PR checks failed — merge is blocked.',
-                         status: 'FAILURE'
-        }
-        success {
-            githubNotify context: 'Jenkins CI/PR',
-                         description: 'All checks passed — PR is ready to merge.',
-                         status: 'SUCCESS'
         }
     }
 }
