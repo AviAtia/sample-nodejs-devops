@@ -86,6 +86,20 @@ pipeline {
                 """
             }
         }
+
+        stage('Update Helm Chart') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                    sh """
+                        python3 ci/scripts/update_helm.py \
+                            --git-user \${GIT_USER} \
+                            --git-token \${GIT_TOKEN} \
+                            --repo AviAtia/devops-infra \
+                            --image-tag ${IMAGE_TAG}
+                    """
+                }
+            }
+        }
     }
 
     post {
